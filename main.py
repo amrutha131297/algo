@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 # ================= CONFIG =================
 FYERS_BASE = os.getenv("FYERS_BASE", "https://api.fyers.in")
 FYERS_DATA_BASE = os.getenv("FYERS_DATA_BASE", "https://api.fyers.in/data-rest/v2")
-FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN")
+FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiZDoxIiwiZDoyIiwieDowIiwieDoxIiwieDoyIl0sImF0X2hhc2giOiJnQUFBQUFCb3YtZjljNGVhVGZ0cVJXaVlnZFRFdVZlcnVCejh3NGV1ZXpILXgySy1yYW9EbHNyT1oxQzRPSmVQeDNIZDc2UHNLd2FuQzVKMEJfOTM4YVYzZFE2STJPWlJiMm0tVGFoQ2tzQ2R5SGE2Z3dtQll5ST0iLCJkaXNwbGF5X25hbWUiOiIiLCJvbXMiOiJLMSIsImhzbV9rZXkiOiI5YmU1NGU0ZjRjZTJkOTFhMTVkZWQ4YzcyODVkMDMyODA5NWFkNTcyMTc5MjNlMjEzOWZjOGRkMSIsImlzRGRwaUVuYWJsZWQiOiJOIiwiaXNNdGZFbmFibGVkIjoiTiIsImZ5X2lkIjoiWUEyNDY0MCIsImFwcFR5cGUiOjEwMCwiZXhwIjoxNzU3NDY0MjAwLCJpYXQiOjE3NTc0MDcyMjksImlzcyI6ImFwaS5meWVycy5pbiIsIm5iZiI6MTc1NzQwNzIyOSwic3ViIjoiYWNjZXNzX3Rva2VuIn0.6SZs3jxGOTMfxDPHvh59n81PzGzawrKUCQW-_W2DJJs" )
 FYERS_APP_ID = os.getenv("FYERS_APP_ID", "CGDSV5GE7E-100")
 BANKNIFTY_SPOT = os.getenv("BANKNIFTY_SPOT", "NSE:NIFTYBANK-INDEX")
 
@@ -16,8 +16,8 @@ REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "10"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 
 # ========== TELEGRAM CONFIG ==========
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "1597187434")
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -109,11 +109,6 @@ def wait_until_ist(target_h: int, target_m: int, target_s: int):
 
 
 def main():
-    missing = [name for name in ["FYERS_ACCESS_TOKEN", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
-               if not os.getenv(name)]
-    if missing:
-        raise SystemExit(f"❌ Missing env vars: {', '.join(missing)}")
-
     broker = FyersBroker(FYERS_BASE, FYERS_DATA_BASE, FYERS_ACCESS_TOKEN, FYERS_APP_ID)
 
     send_telegram("⏳ Waiting for 09:30 candle close (IST)...")
