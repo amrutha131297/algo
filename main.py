@@ -8,11 +8,11 @@ from zoneinfo import ZoneInfo
 # ================== CONFIG ==================
 FYERS_BASE = "https://api.fyers.in"
 FYERS_DATA_BASE = "https://api.fyers.in/data-rest/v2"
-FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiZDoxIiwiZDoyIiwieDowIiwieDoxIiwieDoyIl0sImF0X2hhc2giOiJnQUFBQUFCb3hWcXhZbEZoN2UxckZYUGQtQzV3RHNLODF2SlpfTTNQY2lFbzViNUhlcENOQmEtNy1xWmE1T3BkbHd3WjhfSnJ4Z0c2WGxMNWFqVzlUMm9sbFdiNmZDd1ZpV0JaaWtWYUZzSnJCYlFZYXVCdmJFOD0iLCJkaXNwbGF5X25hbWUiOiIiLCJvbXMiOiJLMSIsImhzbV9rZXkiOiI5YmU1NGU0ZjRjZTJkOTFhMTVkZWQ4YzcyODVkMDMyODA5NWFkNTcyMTc5MjNlMjEzOWZjOGRkMSIsImlzRGRwaUVuYWJsZWQiOiJOIiwiaXNNdGZFbmFibGVkIjoiTiIsImZ5X2lkIjoiWUEyNDY0MCIsImFwcFR5cGUiOjEwMCwiZXhwIjoxNzU3ODA5ODAwLCJpYXQiOjE3NTc3NjQyNzMsImlzcyI6ImFwaS5meWVycy5pbiIsIm5iZiI6MTc1Nzc2NDI3Mywic3ViIjoiYWNjZXNzX3Rva2VuIn0.OeUMuYd9sXRx7nXZT3VoB1aZz-Isx2KNIjAcxxOZJyU")
-FYERS_APP_ID = os.getenv("FYERS_APP_ID","CGDSV5GE7E-100")
+FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN", "YOUR_ACCESS_TOKEN")
+FYERS_APP_ID = os.getenv("FYERS_APP_ID", "YOUR_APP_ID")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN","8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID","1597187434")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID")
 
 MARKET = "NSE:NIFTYBANK-INDEX"
 TIMEZONE = ZoneInfo("Asia/Kolkata")
@@ -120,10 +120,8 @@ def breakout_strategy():
         else:
             time.sleep(3)
 
-# ================== MAIN =================
-    if __name__ == "__main__":
-    main()
-
+# ================== MAIN ==================
+if __name__ == "__main__":
     # Start Telegram listener in background
     threading.Thread(target=listen_telegram_commands, daemon=True).start()
 
