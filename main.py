@@ -1,114 +1,129 @@
 import os
 import time
 import requests
+import threading
 import datetime as dt
-from typing import Optional
 from zoneinfo import ZoneInfo
 
-# ================= CONFIG =================
-FYERS_BASE = os.getenv("FYERS_BASE", "https://api.fyers.in")
-FYERS_DATA_BASE = os.getenv("FYERS_DATA_BASE", "https://api.fyers.in/data-rest/v2")
-FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN")
-FYERS_APP_ID = os.getenv("FYERS_APP_ID")
+# ================== CONFIG ==================
+FYERS_BASE = "https://api.fyers.in"
+FYERS_DATA_BASE = "https://api.fyers.in/data-rest/v2"
+FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN", "YOUR_FYERS_ACCESS_TOKEN")
+FYERS_APP_ID = os.getenv("FYERS_APP_ID", "YOUR_APP_ID")
 
-BANKNIFTY_SPOT = "NSE:NIFTYBANK-INDEX"
-IST = ZoneInfo("Asia/Kolkata")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID")
 
-# ================= TELEGRAM CONFIG =================
-TELEGRAM_TOKEN = "8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ"
-TELEGRAM_CHAT_ID = "1597187434"  
+MARKET = "NSE:NIFTYBANK-INDEX"
+TIMEZONE = ZoneInfo("Asia/Kolkata")
 
+RUN_STRATEGY = False  # start/stop flag controlled by Telegram
 
-def send_telegram(msg: str):
-    """Send notification to Telegram"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+# ================== TELEGRAM ==================
+def send_telegram_message(message: str):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
     try:
-        resp = requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
-        if resp.status_code != 200:
-            print("⚠️ Telegram send failed:", resp.text)
+        r = requests.post(url, data=payload)
+        if r.status_code != 200:
+            print("⚠ Telegram send failed:", r.text)
     except Exception as e:
-        print("⚠️ Telegram error:", e)
+        print("❌ Telegram error:", str(e))
 
 
-# ================= BROKER CLASS =================
-class FyersBroker:
-    def __init__(self, access_token: str):
-        self.access_token = access_token
-        self.session = requests.Session()
-        self.session.headers.update({
-            "Authorization": f"Bearer {self.access_token}"
-        })
+def listen_telegram_commands():
+    """ Continuously listen for Telegram bot commands """
+    global RUN_STRATEGY
+    offset = None
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+            params = {"timeout": 30, "offset": offset}
+            resp = requests.get(url, params=params).json()
 
-    def _get(self, url: str, params=None, max_retries=10, delay=5):
-        """ GET request with retry logic """
-        last_err = None
-        for attempt in range(max_retries):
-            try:
-                resp = self.session.get(url, params=params, timeout=10)
-                resp.raise_for_status()
-                return resp.json()
-            except requests.exceptions.HTTPError as e:
-                last_err = e
-                print(f"⚠️ GET retry {attempt+1}/{max_retries} failed: {e}")
-                time.sleep(delay)
-            except Exception as e:
-                last_err = e
-                print(f"⚠️ Other error: {e}")
-                time.sleep(delay)
-        print("❌ Could not fetch data after retries. Skipping this candle...")
+            if "result" in resp:
+                for update in resp["result"]:
+                    offset = update["update_id"] + 1
+                    if "message" in update and "text" in update["message"]:
+                        text = update["message"]["text"].strip().lower()
+
+                        if text == "/start":
+                            RUN_STRATEGY = True
+                            send_telegram_message("🚀 9:30 Breakout Strategy Started!")
+                        elif text == "/stop":
+                            RUN_STRATEGY = False
+                            send_telegram_message("🛑 Strategy Stopped!")
+                        elif text == "/status":
+                            status = "✅ Running" if RUN_STRATEGY else "⏸ Stopped"
+                            send_telegram_message(f"📊 Current Status: {status}")
+        except Exception as e:
+            print("⚠ Command Listener Error:", str(e))
+        time.sleep(2)
+
+# ================== FYERS DATA FETCH ==================
+def get_history(symbol, resolution="5", start=None, end=None):
+    url = f"{FYERS_DATA_BASE}/history/"
+    headers = {"Authorization": f"Bearer {FYERS_ACCESS_TOKEN}"}
+    params = {
+        "symbol": symbol,
+        "resolution": resolution,
+        "date_format": "1",
+        "range_from": start,
+        "range_to": end,
+        "cont_flag": "1"
+    }
+    try:
+        resp = requests.get(url, headers=headers, params=params)
+        return resp.json()
+    except Exception as e:
+        print("⚠ History fetch failed:", str(e))
         return None
 
-    def get_candle(self, symbol: str, resolution: str, start: dt.datetime, end: dt.datetime):
-        url = f"{FYERS_DATA_BASE}/history/"
-        params = {
-            "symbol": symbol,
-            "resolution": resolution,
-            "date_format": 1,
-            "range_from": start.strftime("%Y-%m-%d %H:%M:%S"),
-            "range_to": end.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        data = self._get(url, params)
-        if not data or "candles" not in data:
-            return []
-        return data["candles"]
+# ================== STRATEGY ==================
+def breakout_strategy():
+    global RUN_STRATEGY
+    traded = False  # allow only one trade per day
 
+    while True:
+        if RUN_STRATEGY:
+            now = dt.datetime.now(TIMEZONE)
 
-# ================= MAIN STRATEGY =================
-def main():
-    broker = FyersBroker(FYERS_ACCESS_TOKEN)
+            # Run only after 9:30 AM
+            if now.hour == 9 and now.minute >= 30 and not traded:
+                today = now.date().strftime("%Y-%m-%d")
+                data = get_history(MARKET, resolution="5", start=today, end=today)
 
-    # Sleep until 9:30:05 IST
-    now = dt.datetime.now(IST)
-    target_time = now.replace(hour=9, minute=30, second=5, microsecond=0)
-    if now > target_time:
-        target_time = target_time + dt.timedelta(days=1)
+                if not data or "candles" not in data:
+                    time.sleep(5)
+                    continue
 
-    sleep_sec = (target_time - now).total_seconds()
-    msg = f"⏳ Sleeping {int(sleep_sec)}s until {target_time.strftime('%H:%M:%S %Z')}"
-    print(msg)
-    send_telegram(msg)
-    time.sleep(sleep_sec)
+                candles = data["candles"]
+                if len(candles) < 2:
+                    time.sleep(5)
+                    continue
 
-    # Get 9:25–9:30 candle
-    start_time = target_time.replace(hour=9, minute=25, second=0)
-    end_time = target_time.replace(hour=9, minute=30, second=0)
+                # Take 9:25-9:30 candle
+                breakout_candle = candles[-2]
+                high = breakout_candle[2]
+                low = breakout_candle[3]
 
-    candles = broker.get_candle(BANKNIFTY_SPOT, "5", start_time, end_time)
-    if not candles:
-        msg = "⚠️ No candle data received. Skipping today's trade."
-        print(msg)
-        send_telegram(msg)
-        return
+                msg = f"📊 9:30 Breakout Levels:\nHigh: {high}\nLow: {low}"
+                send_telegram_message(msg)
 
-    # Got candle data
-    o, h, l, c, v = candles[0]
-    msg = f"✅ Candle received (09:25–09:30)\nO:{o}, H:{h}, L:{l}, C:{c}, V:{v}"
-    print(msg)
-    send_telegram(msg)
+                # Example logic: Place trade if high breaks
+                # (Replace this with your CE/PE order placement logic)
+                send_telegram_message("🚀 Simulated Trade Entry: Buy CE at breakout high")
 
-    # === your strategy logic here ===
-    # Example breakout conditions can be coded below
+                traded = True
 
+            time.sleep(10)
+        else:
+            time.sleep(3)
 
-if __name__ == "__main__":
-    main()
+# ================== MAIN ==================
+if _name_ == "_main_":
+    # Start Telegram listener in background
+    threading.Thread(target=listen_telegram_commands, daemon=True).start()
+
+    # Start breakout strategy loop
+    breakout_strategy()
