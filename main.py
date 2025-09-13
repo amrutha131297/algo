@@ -120,8 +120,10 @@ def breakout_strategy():
         else:
             time.sleep(3)
 
-# ================== MAIN ==================
-if _name_ == "_main_":
+# ================== MAIN =================
+    if __name__ == "__main__":
+    main()
+
     # Start Telegram listener in background
     threading.Thread(target=listen_telegram_commands, daemon=True).start()
 
