@@ -15,8 +15,8 @@ BANKNIFTY_SPOT = "NSE:NIFTYBANK-INDEX"
 IST = ZoneInfo("Asia/Kolkata")
 
 # ================= TELEGRAM CONFIG =================
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"   # <-- put your token here
-TELEGRAM_CHAT_ID = "YOUR_CHAT_ID"            # <-- put your chat id here
+TELEGRAM_TOKEN = "8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ"
+TELEGRAM_CHAT_ID = "1597187434"  
 
 
 def send_telegram(msg: str):
