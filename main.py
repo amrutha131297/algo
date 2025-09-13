@@ -2,152 +2,112 @@ import os
 import time
 import requests
 import datetime as dt
-from typing import List, Optional
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 # ================= CONFIG =================
 FYERS_BASE = os.getenv("FYERS_BASE", "https://api.fyers.in")
 FYERS_DATA_BASE = os.getenv("FYERS_DATA_BASE", "https://api.fyers.in/data-rest/v2")
-FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiZDoxIiwiZDoyIiwieDowIiwieDoxIiwieDoyIl0sImF0X2hhc2giOiJnQUFBQUFCb3YtZjljNGVhVGZ0cVJXaVlnZFRFdVZlcnVCejh3NGV1ZXpILXgySy1yYW9EbHNyT1oxQzRPSmVQeDNIZDc2UHNLd2FuQzVKMEJfOTM4YVYzZFE2STJPWlJiMm0tVGFoQ2tzQ2R5SGE2Z3dtQll5ST0iLCJkaXNwbGF5X25hbWUiOiIiLCJvbXMiOiJLMSIsImhzbV9rZXkiOiI5YmU1NGU0ZjRjZTJkOTFhMTVkZWQ4YzcyODVkMDMyODA5NWFkNTcyMTc5MjNlMjEzOWZjOGRkMSIsImlzRGRwaUVuYWJsZWQiOiJOIiwiaXNNdGZFbmFibGVkIjoiTiIsImZ5X2lkIjoiWUEyNDY0MCIsImFwcFR5cGUiOjEwMCwiZXhwIjoxNzU3NDY0MjAwLCJpYXQiOjE3NTc0MDcyMjksImlzcyI6ImFwaS5meWVycy5pbiIsIm5iZiI6MTc1NzQwNzIyOSwic3ViIjoiYWNjZXNzX3Rva2VuIn0.6SZs3jxGOTMfxDPHvh59n81PzGzawrKUCQW-_W2DJJs" )
-FYERS_APP_ID = os.getenv("FYERS_APP_ID", "CGDSV5GE7E-100")
-BANKNIFTY_SPOT = os.getenv("BANKNIFTY_SPOT", "NSE:NIFTYBANK-INDEX")
+FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN")
+FYERS_APP_ID = os.getenv("FYERS_APP_ID")
 
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "10"))
-MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
-
-# ========== TELEGRAM CONFIG ==========
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "1597187434")
-
+BANKNIFTY_SPOT = "NSE:NIFTYBANK-INDEX"
 IST = ZoneInfo("Asia/Kolkata")
+
+# ================= TELEGRAM CONFIG =================
+TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"   # <-- put your token here
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID"            # <-- put your chat id here
 
 
 def send_telegram(msg: str):
-    """Send a Telegram message."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("ℹ️ Telegram creds not set; skipping message:", msg)
-        return
+    """Send notification to Telegram"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg}
-        requests.post(url, data=payload, timeout=5)
+        resp = requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+        if resp.status_code != 200:
+            print("⚠️ Telegram send failed:", resp.text)
     except Exception as e:
-        print("❌ Telegram error:", e)
+        print("⚠️ Telegram error:", e)
 
 
+# ================= BROKER CLASS =================
 class FyersBroker:
-    def __init__(self, base_url: str, data_url: str, access_token: str, app_id: str):
-        if not access_token:
-            raise ValueError("❌ No access token found! Set FYERS_ACCESS_TOKEN")
-        self.base_url = base_url.rstrip("/")
-        self.data_url = data_url.rstrip("/")
+    def __init__(self, access_token: str):
         self.access_token = access_token
-        self.app_id = app_id
         self.session = requests.Session()
         self.session.headers.update({
-            "Authorization": f"Bearer {self.access_token}",
-            "Accept": "application/json"
+            "Authorization": f"Bearer {self.access_token}"
         })
 
-    def _get(self, url: str, params: dict) -> dict:
+    def _get(self, url: str, params=None, max_retries=10, delay=5):
+        """ GET request with retry logic """
         last_err = None
-        for attempt in range(1, MAX_RETRIES + 1):
+        for attempt in range(max_retries):
             try:
-                resp = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT)
-                if resp.headers.get("Content-Type", "").startswith("application/json"):
-                    return resp.json()
+                resp = self.session.get(url, params=params, timeout=10)
                 resp.raise_for_status()
-                return {"raw": resp.text}
+                return resp.json()
+            except requests.exceptions.HTTPError as e:
+                last_err = e
+                print(f"⚠️ GET retry {attempt+1}/{max_retries} failed: {e}")
+                time.sleep(delay)
             except Exception as e:
                 last_err = e
-                print(f"⚠️ GET retry {attempt}/{MAX_RETRIES} failed: {e}")
-                if attempt < MAX_RETRIES:
-                    time.sleep(1.0 * attempt)
-        raise last_err
+                print(f"⚠️ Other error: {e}")
+                time.sleep(delay)
+        print("❌ Could not fetch data after retries. Skipping this candle...")
+        return None
 
-    def get_candle(
-        self, symbol: str, interval: str, start_time: str, end_time: str
-    ) -> Optional[List[List[float]]]:
-        url = f"{self.data_url}/history/"
+    def get_candle(self, symbol: str, resolution: str, start: dt.datetime, end: dt.datetime):
+        url = f"{FYERS_DATA_BASE}/history/"
         params = {
             "symbol": symbol,
-            "resolution": interval,
+            "resolution": resolution,
             "date_format": 1,
-            "range_from": start_time,
-            "range_to": end_time,
+            "range_from": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "range_to": end.strftime("%Y-%m-%d %H:%M:%S"),
         }
         data = self._get(url, params)
-        if isinstance(data, dict) and "candles" in data and data["candles"]:
-            return data["candles"]
-        msg = f"❌ Candle fetch error: {data}"
-        print(msg)
-        send_telegram(msg)
-        return None
-
-    def get_ltp(self, symbol: str) -> Optional[float]:
-        url = f"{self.data_url}/quotes/"
-        params = {"symbols": symbol}
-        try:
-            data = self._get(url, params=params)
-            if "d" in data and data["d"] and "v" in data["d"][0] and "lp" in data["d"][0]["v"]:
-                return data["d"][0]["v"]["lp"]
-        except Exception as e:
-            msg = f"❌ LTP fetch error: {repr(e)}"
-            print(msg)
-            send_telegram(msg)
-        return None
+        if not data or "candles" not in data:
+            return []
+        return data["candles"]
 
 
-def wait_until_ist(target_h: int, target_m: int, target_s: int):
-    now_ist = dt.datetime.now(IST)
-    target = now_ist.replace(hour=target_h, minute=target_m, second=target_s, microsecond=0)
-    if target <= now_ist:
-        target = target + dt.timedelta(days=1)
-    seconds = (target - now_ist).total_seconds()
-    print(f"⏳ Sleeping {int(seconds)}s until {target.astimezone(IST).time()} IST")
-    time.sleep(max(0, seconds))
-
-
+# ================= MAIN STRATEGY =================
 def main():
-    broker = FyersBroker(FYERS_BASE, FYERS_DATA_BASE, FYERS_ACCESS_TOKEN, FYERS_APP_ID)
+    broker = FyersBroker(FYERS_ACCESS_TOKEN)
 
-    send_telegram("⏳ Waiting for 09:30 candle close (IST)...")
-    wait_until_ist(9, 30, 5)
+    # Sleep until 9:30:05 IST
+    now = dt.datetime.now(IST)
+    target_time = now.replace(hour=9, minute=30, second=5, microsecond=0)
+    if now > target_time:
+        target_time = target_time + dt.timedelta(days=1)
 
-    send_telegram("✅ 09:25–09:30 candle closed. Fetching high/low...")
+    sleep_sec = (target_time - now).total_seconds()
+    msg = f"⏳ Sleeping {int(sleep_sec)}s until {target_time.strftime('%H:%M:%S %Z')}"
+    print(msg)
+    send_telegram(msg)
+    time.sleep(sleep_sec)
 
-    today_ist = dt.datetime.now(IST).date()
-    start_time = f"{today_ist} 09:25:00"
-    end_time   = f"{today_ist} 09:30:00"
+    # Get 9:25–9:30 candle
+    start_time = target_time.replace(hour=9, minute=25, second=0)
+    end_time = target_time.replace(hour=9, minute=30, second=0)
 
     candles = broker.get_candle(BANKNIFTY_SPOT, "5", start_time, end_time)
     if not candles:
-        send_telegram("❌ Could not fetch 09:25–09:30 candle. Exiting.")
+        msg = "⚠️ No candle data received. Skipping today's trade."
+        print(msg)
+        send_telegram(msg)
         return
 
-    c = candles[-1]
-    if len(c) < 4:
-        send_telegram(f"❌ Unexpected candle format: {c}")
-        return
+    # Got candle data
+    o, h, l, c, v = candles[0]
+    msg = f"✅ Candle received (09:25–09:30)\nO:{o}, H:{h}, L:{l}, C:{c}, V:{v}"
+    print(msg)
+    send_telegram(msg)
 
-    candle_high = float(c[2])
-    candle_low  = float(c[3])
-
-    send_telegram(f"📊 09:25–09:30 Candle: High={candle_high:.2f}, Low={candle_low:.2f}")
-
-    spot_price = broker.get_ltp(BANKNIFTY_SPOT)
-    if spot_price is None:
-        send_telegram("❌ Could not fetch current spot price.")
-        return
-
-    send_telegram(f"📌 Current Spot Price: {spot_price:.2f}")
-
-    if spot_price > candle_high:
-        send_telegram("🚀 Breakout UP detected (spot > high).")
-    elif spot_price < candle_low:
-        send_telegram("🔻 Breakout DOWN detected (spot < low).")
-    else:
-        send_telegram("⏳ No breakout yet. Waiting/monitoring...")
+    # === your strategy logic here ===
+    # Example breakout conditions can be coded below
 
 
 if __name__ == "__main__":
