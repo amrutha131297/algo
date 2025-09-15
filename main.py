@@ -1,122 +1,174 @@
-import os
 import requests
-import threading
 import time
 import datetime as dt
+from typing import List, Optional
 
-# ==============================
-# Telegram Setup
-# ==============================
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+# ================= CONFIG (LIVE) =================
+FYERS_BASE = "https://api.fyers.in"
+FYERS_DATA_BASE = "https://api.fyers.in/data-rest/v2"
+# ⛔️ Keep your token secret. Replace below with your current valid token.
+FYERS_ACCESS_TOKEN =  "YOUR_FYERS_ACCESS_TOKEN"
+FYERS_APP_ID = "CGDSV5GE7E-100"   # typically <client_id>-100
+BANKNIFTY_SPOT = "NSE:NIFTYBANK-INDEX"
+REQUEST_TIMEOUT = 10              # seconds
+MAX_RETRIES = 3
+# ================================================
 
-if not TELEGRAM_TOKEN or not CHAT_ID:
-    raise ValueError("Please set TELEGRAM_TOKEN and CHAT_ID as environment variables!")
+# ========== TELEGRAM CONFIG ==========
+TELEGRAM_BOT_TOKEN = "8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ"
+TELEGRAM_CHAT_ID = "1597187434"
 
-def send_telegram_message(message: str):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": message}
+def send_telegram(msg: str):
+    """Send a Telegram message."""
     try:
-        requests.post(url, data=data)
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+        requests.post(url, data=payload, timeout=5)
     except Exception as e:
-        print("Telegram Error:", e)
+        print("❌ Telegram error:", e)
 
-# ==============================
-# Trading Bot Logic
-# ==============================
-bot_running = False
-trade_taken = False
-direction = None
 
-def get_930_levels():
-    """Replace this with API call to get 9:25–9:30 candle high/low"""
-    return 49200, 49120  # Example High, Low
+class FyersBroker:
+    def __init__(self, base_url: str, data_url: str, access_token: str, app_id: str):
+        if not access_token:
+            raise ValueError("❌ No access token found! Please paste it in FYERS_ACCESS_TOKEN")
+        self.base_url = base_url.rstrip("/")
+        self.data_url = data_url.rstrip("/")
+        self.access_token = access_token
+        self.app_id = app_id
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Authorization": f"Bearer {self.access_token}",
+            "Accept": "application/json"
+        })
 
-def select_option(premium_range=(35, 45)):
-    """Replace with API to fetch OTM options in the premium range"""
-    return "BANKNIFTY24SEP49000CE", 40  # (symbol, premium)
+    def _get(self, url: str, params: dict) -> dict:
+        last_err = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                resp = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT)
+                if resp.headers.get("Content-Type", "").startswith("application/json"):
+                    data = resp.json()
+                else:
+                    resp.raise_for_status()
+                    data = {"raw": resp.text}
+                return data
+            except Exception as e:
+                last_err = e
+                if attempt < MAX_RETRIES:
+                    time.sleep(1.0 * attempt)
+                else:
+                    raise
+        raise last_err
 
-def trading_loop():
-    global bot_running, trade_taken, direction
-    send_telegram_message("📊 Trading loop started... Waiting for breakout after 9:30 candle.")
+    def get_candle(
+        self, symbol: str, interval: str, start_time: str, end_time: str
+    ) -> Optional[List[List[float]]]:
+        url = f"{self.data_url}/history/"
+        params = {
+            "symbol": symbol,
+            "resolution": interval,
+            "date_format": 1,
+            "range_from": start_time,
+            "range_to": end_time,
+        }
+        data = self._get(url, params=params)
+        if isinstance(data, dict) and "candles" in data and data["candles"]:
+            return data["candles"]
 
-    high, low = get_930_levels()
+        msg = f"❌ Candle fetch error: {data}"
+        print(msg)
+        send_telegram(msg)
+        return None
 
-    while bot_running and not trade_taken:
+    def get_ltp(self, symbol: str) -> Optional[float]:
+        url = f"{self.data_url}/quotes/"
+        params = {"symbols": symbol}
+        try:
+            data = self._get(url, params=params)
+            if "d" in data and data["d"] and "v" in data["d"][0] and "lp" in data["d"][0]["v"]:
+                return data["d"][0]["v"]["lp"]
+        except Exception as e:
+            msg = f"❌ LTP fetch error: {repr(e)}"
+            print(msg)
+            send_telegram(msg)
+        return None
+
+
+def wait_until(target_time: dt.time):
+    while True:
         now = dt.datetime.now().time()
-        if now >= dt.time(9, 30):
-            # DEMO: replace with live price fetch
-            ltp = 49250  # Example price
+        if now >= target_time:
+            break
+        time.sleep(0.5)
 
-            if ltp > high and direction is None:
-                option, price = select_option()
-                if 35 <= price <= 45:
-                    direction = "CE"
-                    trade_taken = True
-                    sl = price - 7
-                    target = price + 10
-                    send_telegram_message(f"🚀 CE Breakout! Bought {option} @ {price}\n🎯 Target: {target}, ❌ SL: {sl}")
 
-            elif ltp < low and direction is None:
-                option, price = select_option()
-                if 35 <= price <= 45:
-                    direction = "PE"
-                    trade_taken = True
-                    sl = price - 7
-                    target = price + 10
-                    send_telegram_message(f"🚀 PE Breakout! Bought {option} @ {price}\n🎯 Target: {target}, ❌ SL: {sl}")
+def main():
+    broker = FyersBroker(FYERS_BASE, FYERS_DATA_BASE, FYERS_ACCESS_TOKEN, FYERS_APP_ID)
 
-        time.sleep(5)
+    msg = "⏳ Waiting for 09:30 candle close..."
+    print(msg)
+    send_telegram(msg)
 
-    send_telegram_message("🛑 Trading loop ended.")
+    wait_until(dt.time(9, 30, 5))
 
-# ==============================
-# Flask App
-# ==============================
-app = Flask(__name__)
+    msg = "✅ 09:25-09:30 candle closed. Fetching high/low..."
+    print(msg)
+    send_telegram(msg)
 
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
-    global bot_running, trade_taken, direction
-    data = request.get_json()
-    if "message" in data:
-        chat_id = data["message"]["chat"]["id"]
-        text = data["message"].get("text", "")
+    today = dt.datetime.now().strftime("%Y-%m-%d")
+    start_time = f"{today} 09:25:00"
+    end_time = f"{today} 09:30:00"
 
-        if str(chat_id) != str(CHAT_ID):
-            return "unauthorized"
+    candles = None
+    try:
+        candles = broker.get_candle(BANKNIFTY_SPOT, "5", start_time, end_time)
+    except Exception as e:
+        msg = f"❌ Network/HTTP error while fetching candle: {repr(e)}"
+        print(msg)
+        send_telegram(msg)
 
-        if text == "/start":
-            if not bot_running:
-                bot_running = True
-                trade_taken = False
-                direction = None
-                send_telegram_message("🚀 Bot started! Waiting for breakout...")
-                t = threading.Thread(target=trading_loop, daemon=True)
-                t.start()
-            else:
-                send_telegram_message("⚠ Bot already running!")
+    if not candles:
+        msg = "❌ Could not fetch 9:25-9:30 candle. Exiting."
+        print(msg)
+        send_telegram(msg)
+        return
 
-        elif text == "/stop":
-            if bot_running:
-                bot_running = False
-                send_telegram_message("🛑 Bot stopped by user.")
-            else:
-                send_telegram_message("⚠ Bot is not running.")
+    c = candles[-1]
+    if len(c) < 6:
+        msg = f"❌ Unexpected candle format: {c}"
+        print(msg)
+        send_telegram(msg)
+        return
 
-        elif text == "/status":
-            status = "✅ Running" if bot_running else "❌ Stopped"
-            send_telegram_message(f"📊 Bot status: {status}\nTrade Taken: {trade_taken}, Direction: {direction}")
+    candle_high = float(c[2])
+    candle_low = float(c[3])
 
-    return "ok"
+    msg = f"✅ 9:25-9:30 Candle High: {candle_high:.2f}, Low: {candle_low:.2f}"
+    print(msg)
+    send_telegram(msg)
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Telegram Trading Bot is running!"
+    spot_price = broker.get_ltp(BANKNIFTY_SPOT)
+    if spot_price is None:
+        msg = "❌ Could not fetch current spot price."
+        print(msg)
+        send_telegram(msg)
+        return
 
-# ==============================
-# Entry Point
-# ==============================
+    msg = f"📌 Current Spot Price: {spot_price:.2f}"
+    print(msg)
+    send_telegram(msg)
+
+    if spot_price > candle_high:
+        msg = "🚀 Breakout UP detected (spot > high)."
+    elif spot_price < candle_low:
+        msg = "🔻 Breakout DOWN detected (spot < low)."
+    else:
+        msg = "⏳ No breakout yet. Waiting/monitoring..."
+
+    print(msg)
+    send_telegram(msg)
+
+
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    main()
