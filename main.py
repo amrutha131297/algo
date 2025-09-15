@@ -1,25 +1,24 @@
+import os
 import requests
 import time
 import datetime as dt
 from typing import List, Optional
+from flask import Flask
 
 # ================= CONFIG (LIVE) =================
 FYERS_BASE = "https://api.fyers.in"
 FYERS_DATA_BASE = "https://api.fyers.in/data-rest/v2"
-# ⛔️ Keep your token secret. Replace below with your current valid token.
-FYERS_ACCESS_TOKEN =  "YOUR_FYERS_ACCESS_TOKEN"
-FYERS_APP_ID = "CGDSV5GE7E-100"   # typically <client_id>-100
+FYERS_ACCESS_TOKEN = "YOUR_FYERS_ACCESS_TOKEN"   # paste valid token
+FYERS_APP_ID = "CGDSV5GE7E-100"
 BANKNIFTY_SPOT = "NSE:NIFTYBANK-INDEX"
-REQUEST_TIMEOUT = 10              # seconds
+REQUEST_TIMEOUT = 10
 MAX_RETRIES = 3
-# ================================================
 
 # ========== TELEGRAM CONFIG ==========
 TELEGRAM_BOT_TOKEN = "8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ"
 TELEGRAM_CHAT_ID = "1597187434"
 
 def send_telegram(msg: str):
-    """Send a Telegram message."""
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg}
@@ -29,7 +28,7 @@ def send_telegram(msg: str):
 
 
 class FyersBroker:
-    def __init__(self, base_url: str, data_url: str, access_token: str, app_id: str):
+    def _init_(self, base_url: str, data_url: str, access_token: str, app_id: str):
         if not access_token:
             raise ValueError("❌ No access token found! Please paste it in FYERS_ACCESS_TOKEN")
         self.base_url = base_url.rstrip("/")
@@ -61,9 +60,7 @@ class FyersBroker:
                     raise
         raise last_err
 
-    def get_candle(
-        self, symbol: str, interval: str, start_time: str, end_time: str
-    ) -> Optional[List[List[float]]]:
+    def get_candle(self, symbol: str, interval: str, start_time: str, end_time: str) -> Optional[List[List[float]]]:
         url = f"{self.data_url}/history/"
         params = {
             "symbol": symbol,
@@ -95,22 +92,16 @@ class FyersBroker:
         return None
 
 
-def wait_until(target_time: dt.time):
-    while True:
-        now = dt.datetime.now().time()
-        if now >= target_time:
-            break
-        time.sleep(0.5)
-
-
-def main():
+def run_strategy():
     broker = FyersBroker(FYERS_BASE, FYERS_DATA_BASE, FYERS_ACCESS_TOKEN, FYERS_APP_ID)
 
     msg = "⏳ Waiting for 09:30 candle close..."
     print(msg)
     send_telegram(msg)
 
-    wait_until(dt.time(9, 30, 5))
+    # Wait until 9:30:05
+    while dt.datetime.now().time() < dt.time(9, 30, 5):
+        time.sleep(1)
 
     msg = "✅ 09:25-09:30 candle closed. Fetching high/low..."
     print(msg)
@@ -120,14 +111,7 @@ def main():
     start_time = f"{today} 09:25:00"
     end_time = f"{today} 09:30:00"
 
-    candles = None
-    try:
-        candles = broker.get_candle(BANKNIFTY_SPOT, "5", start_time, end_time)
-    except Exception as e:
-        msg = f"❌ Network/HTTP error while fetching candle: {repr(e)}"
-        print(msg)
-        send_telegram(msg)
-
+    candles = broker.get_candle(BANKNIFTY_SPOT, "5", start_time, end_time)
     if not candles:
         msg = "❌ Could not fetch 9:25-9:30 candle. Exiting."
         print(msg)
@@ -170,5 +154,22 @@ def main():
     send_telegram(msg)
 
 
-if __name__ == "__main__":
-    main()
+# ================= FLASK APP =================
+app = Flask(_name_)
+
+@app.route("/")
+def home():
+    return "✅ Algo Bot is running on Railway 🚀"
+
+@app.route("/run")
+def run_now():
+    try:
+        run_strategy()
+        return "✅ Strategy executed. Check Telegram for updates."
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
+if _name_ == "_main_":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
