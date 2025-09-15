@@ -1,129 +1,127 @@
 import os
-import time
 import requests
+from flask import Flask, request
 import threading
+import time
 import datetime as dt
-from zoneinfo import ZoneInfo
 
-# ================== CONFIG ==================
-FYERS_BASE = "https://api.fyers.in"
-FYERS_DATA_BASE = "https://api.fyers.in/data-rest/v2"
-FYERS_ACCESS_TOKEN = os.getenv("FYERS_ACCESS_TOKEN","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiZDoxIiwiZDoyIiwieDowIiwieDoxIiwieDoyIl0sImF0X2hhc2giOiJnQUFBQUFCb3g4cnBzYTBJZTk4ckZCaE5TNzVFMnkyTDhGWEJrUGVsM1F6LVlJMGw3bFQ1XzhGLWs4Wjg3bVBSOW1tc0dMaU1mRmlUTFVjbWFSd1ducmNQbVZvYmR0RGNrTFhNWm9fb3gwU0xyMGRibkR1Y1ZpUT0iLCJkaXNwbGF5X25hbWUiOiIiLCJvbXMiOiJLMSIsImhzbV9rZXkiOiI5YmU1NGU0ZjRjZTJkOTFhMTVkZWQ4YzcyODVkMDMyODA5NWFkNTcyMTc5MjNlMjEzOWZjOGRkMSIsImlzRGRwaUVuYWJsZWQiOiJOIiwiaXNNdGZFbmFibGVkIjoiTiIsImZ5X2lkIjoiWUEyNDY0MCIsImFwcFR5cGUiOjEwMCwiZXhwIjoxNzU3OTgyNjAwLCJpYXQiOjE3NTc5MjQwNzMsImlzcyI6ImFwaS5meWVycy5pbiIsIm5iZiI6MTc1NzkyNDA3Mywic3ViIjoiYWNjZXNzX3Rva2VuIn0.wjJZsdjZbuLcNfiScn-uCqYufXt0t1zcoBM4YCYA5Qc")
-FYERS_APP_ID = os.getenv("FYERS_APP_ID", "CGDSV5GE7E-100")
+# ==============================
+# Telegram Setup
+# ==============================
+TELEGRAM_TOKEN = os.getenv("8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ")
+CHAT_ID = os.getenv("1597187434")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "1597187434")
 
-MARKET = "NSE:NIFTYBANK-INDEX"
-TIMEZONE = ZoneInfo("Asia/Kolkata")
-
-RUN_STRATEGY = False  # start/stop flag controlled by Telegram
-
-# ================== TELEGRAM ==================
 def send_telegram_message(message: str):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {"chat_id": CHAT_ID, "text": message}
     try:
-        r = requests.post(url, data=payload)
-        if r.status_code != 200:
-            print("⚠ Telegram send failed:", r.text)
+        requests.post(url, data=data)
     except Exception as e:
-        print("❌ Telegram error:", str(e))
+        print("Telegram Error:", e)
 
+# ==============================
+# Trading Bot Logic
+# ==============================
+bot_running = False
+trade_taken = False
+direction = None
 
-def listen_telegram_commands():
-    """ Continuously listen for Telegram bot commands """
-    global RUN_STRATEGY
-    offset = None
-    while True:
-        try:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-            params = {"timeout": 30, "offset": offset}
-            resp = requests.get(url, params=params).json()
+def get_930_levels():
+    """
+    Replace this with API call to get 9:25–9:30 candle high/low
+    For demo: hardcoded values
+    """
+    return 49200, 49120   # Example: High, Low
 
-            if "result" in resp:
-                for update in resp["result"]:
-                    offset = update["update_id"] + 1
-                    if "message" in update and "text" in update["message"]:
-                        text = update["message"]["text"].strip().lower()
+def select_option(premium_range=(35, 45)):
+    """
+    Replace with API to fetch OTM options in the premium range.
+    For demo: return dummy strike
+    """
+    return "BANKNIFTY24SEP49000CE", 40   # (symbol, premium)
 
-                        if text == "/start":
-                            RUN_STRATEGY = True
-                            send_telegram_message("🚀 9:30 Breakout Strategy Started!")
-                        elif text == "/stop":
-                            RUN_STRATEGY = False
-                            send_telegram_message("🛑 Strategy Stopped!")
-                        elif text == "/status":
-                            status = "✅ Running" if RUN_STRATEGY else "⏸ Stopped"
-                            send_telegram_message(f"📊 Current Status: {status}")
-        except Exception as e:
-            print("⚠ Command Listener Error:", str(e))
-        time.sleep(2)
+def trading_loop():
+    global bot_running, trade_taken, direction
+    send_telegram_message("📊 Trading loop started... Waiting for breakout after 9:30 candle.")
 
-# ================== FYERS DATA FETCH ==================
-def get_history(symbol, resolution="5", start=None, end=None):
-    url = f"{FYERS_DATA_BASE}/history/"
-    headers = {"Authorization": f"Bearer {FYERS_ACCESS_TOKEN}"}
-    params = {
-        "symbol": symbol,
-        "resolution": resolution,
-        "date_format": "1",
-        "range_from": start,
-        "range_to": end,
-        "cont_flag": "1"
-    }
-    try:
-        resp = requests.get(url, headers=headers, params=params)
-        return resp.json()
-    except Exception as e:
-        print("⚠ History fetch failed:", str(e))
-        return None
+    high, low = get_930_levels()
 
-# ================== STRATEGY ==================
-def breakout_strategy():
-    global RUN_STRATEGY
-    traded = False  # allow only one trade per day
+    while bot_running and not trade_taken:
+        now = dt.datetime.now().time()
+        if now >= dt.time(9, 30):  # market time check
+            # DEMO: replace with live price fetch
+            ltp = 49250  # Example price
 
-    while True:
-        if RUN_STRATEGY:
-            now = dt.datetime.now(TIMEZONE)
+            if ltp > high and direction is None:  # Breakout high → Buy CE
+                option, price = select_option()
+                if 35 <= price <= 45:
+                    direction = "CE"
+                    trade_taken = True
+                    sl = price - 7
+                    target = price + 10
+                    send_telegram_message(f"🚀 CE Breakout! Bought {option} @ {price}\n🎯 Target: {target}, ❌ SL: {sl}")
 
-            # Run only after 9:30 AM
-            if now.hour == 9 and now.minute >= 30 and not traded:
-                today = now.date().strftime("%Y-%m-%d")
-                data = get_history(MARKET, resolution="5", start=today, end=today)
+            elif ltp < low and direction is None:  # Breakout low → Buy PE
+                option, price = select_option()
+                if 35 <= price <= 45:
+                    direction = "PE"
+                    trade_taken = True
+                    sl = price - 7
+                    target = price + 10
+                    send_telegram_message(f"🚀 PE Breakout! Bought {option} @ {price}\n🎯 Target: {target}, ❌ SL: {sl}")
 
-                if not data or "candles" not in data:
-                    time.sleep(5)
-                    continue
+            time.sleep(5)
 
-                candles = data["candles"]
-                if len(candles) < 2:
-                    time.sleep(5)
-                    continue
+    send_telegram_message("🛑 Trading loop ended.")
 
-                # Take 9:25-9:30 candle
-                breakout_candle = candles[-2]
-                high = breakout_candle[2]
-                low = breakout_candle[3]
+# ==============================
+# Flask App for Telegram Commands
+# ==============================
+app = Flask(_name_)
 
-                msg = f"📊 9:30 Breakout Levels:\nHigh: {high}\nLow: {low}"
-                send_telegram_message(msg)
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def webhook():
+    global bot_running, trade_taken, direction
+    data = request.get_json()
+    if "message" in data:
+        chat_id = data["message"]["chat"]["id"]
+        text = data["message"].get("text", "")
 
-                # Example logic: Place trade if high breaks
-                # (Replace this with your CE/PE order placement logic)
-                send_telegram_message("🚀 Simulated Trade Entry: Buy CE at breakout high")
+        if str(chat_id) != str(CHAT_ID):  # Security check
+            return "unauthorized"
 
-                traded = True
+        if text == "/start":
+            if not bot_running:
+                bot_running = True
+                trade_taken = False
+                direction = None
+                send_telegram_message("🚀 Bot started! Waiting for breakout...")
+                t = threading.Thread(target=trading_loop)
+                t.start()
+            else:
+                send_telegram_message("⚠ Bot already running!")
 
-            time.sleep(10)
-        else:
-            time.sleep(3)
+        elif text == "/stop":
+            if bot_running:
+                bot_running = False
+                send_telegram_message("🛑 Bot stopped by user.")
+            else:
+                send_telegram_message("⚠ Bot is not running.")
 
-# ================== MAIN ==================
-if __name__ == "__main__":
-    # Start Telegram listener in background
-    threading.Thread(target=listen_telegram_commands, daemon=True).start()
+        elif text == "/status":
+            status = "✅ Running" if bot_running else "❌ Stopped"
+            send_telegram_message(f"📊 Bot status: {status}\nTrade Taken: {trade_taken}, Direction: {direction}")
 
-    # Start breakout strategy loop
-    breakout_strategy()
+    return "ok"
+
+@app.route("/", methods=["GET"])
+def home():
+    return "Telegram Trading Bot is running!"
+
+# ==============================
+# Entry Point
+# ==============================
+if _name_ == "_main_":
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
