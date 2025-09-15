@@ -8,9 +8,8 @@ import datetime as dt
 # ==============================
 # Telegram Setup
 # ==============================
-TELEGRAM_TOKEN = os.getenv("8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ")
-CHAT_ID = os.getenv("1597187434")
-
+TELEGRAM_TOKEN = "8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ"  # Replace with your token
+CHAT_ID = "1597187434"  # Replace with your chat ID
 
 def send_telegram_message(message: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -32,14 +31,14 @@ def get_930_levels():
     Replace this with API call to get 9:25–9:30 candle high/low
     For demo: hardcoded values
     """
-    return 49200, 49120   # Example: High, Low
+    return 49200, 49120  # Example: High, Low
 
 def select_option(premium_range=(35, 45)):
     """
     Replace with API to fetch OTM options in the premium range.
     For demo: return dummy strike
     """
-    return "BANKNIFTY24SEP49000CE", 40   # (symbol, premium)
+    return "BANKNIFTY24SEP49000CE", 40  # (symbol, premium)
 
 def trading_loop():
     global bot_running, trade_taken, direction
@@ -78,7 +77,7 @@ def trading_loop():
 # ==============================
 # Flask App for Telegram Commands
 # ==============================
-app = Flask(_name_)
+app = Flask(__name__)
 
 @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
 def webhook():
@@ -122,6 +121,6 @@ def home():
 # ==============================
 # Entry Point
 # ==============================
-if _name_ == "_main_":
+if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
