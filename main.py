@@ -1,6 +1,5 @@
 import os
 import requests
-from flask import Flask, request
 import threading
 import time
 import datetime as dt
