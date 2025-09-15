@@ -67,7 +67,7 @@ def trading_loop():
                     target = price + 10
                     send_telegram_message(f"🚀 PE Breakout! Bought {option} @ {price}\n🎯 Target: {target}, ❌ SL: {sl}")
 
-            time.sleep(5)
+        time.sleep(5)
 
     send_telegram_message("🛑 Trading loop ended.")
 
@@ -93,7 +93,7 @@ def webhook():
                 trade_taken = False
                 direction = None
                 send_telegram_message("🚀 Bot started! Waiting for breakout...")
-                t = threading.Thread(target=trading_loop)
+                t = threading.Thread(target=trading_loop, daemon=True)
                 t.start()
             else:
                 send_telegram_message("⚠ Bot already running!")
