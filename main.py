@@ -31,7 +31,6 @@ TELEGRAM_CHAT_ID = os.getenv("CHAT_ID")
 # Telegram Helper
 # ==============================
 def send_telegram(msg: str):
-    """Send a message to Telegram"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         logging.error("❌ TELEGRAM_TOKEN or CHAT_ID not set in Railway variables!")
         return
@@ -195,7 +194,6 @@ def send_test():
 
 @app.route(f"/webhook/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
-    """Handle incoming Telegram updates"""
     try:
         data = request.get_json(force=True)
         logging.info(f"📩 Incoming Telegram update: {data}")
