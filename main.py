@@ -4,7 +4,7 @@ import time
 import datetime as dt
 import logging
 from typing import List, Optional
-from flask import Flask, request, jsonify
+from flask import Flask
 
 # ==============================
 # Logging Setup
@@ -185,4 +185,10 @@ def home():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     logging.info(f"🚀 Starting app on port {port}")
+
+    # Run strategy in a background thread
+    import threading
+    threading.Thread(target=run_strategy, daemon=True).start()
+
+    # Run Flask server
     app.run(host="0.0.0.0", port=port)
