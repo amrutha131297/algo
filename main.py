@@ -173,19 +173,11 @@ def run_strategy():
 # ==============================
 # Flask App
 # ==============================
-from flask import Flask
-import os
-
-app = Flask(_name_)
+app = Flask(__name__)
 
 @app.route("/")
 def home():
     return "Hello Amrutha 🚀 Your Flask app is working on Railway!"
-
-if _name_ == "_main_":
-    # Railway gives PORT as environment variable, default to 8080
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
 
 # ==============================
 # Run App (Railway)
