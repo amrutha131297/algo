@@ -173,41 +173,19 @@ def run_strategy():
 # ==============================
 # Flask App
 # ==============================
-app = Flask(__name__)
+from flask import Flask
+import os
+
+app = Flask(_name_)
 
 @app.route("/")
 def home():
-    return "✅ Algo Bot + Telegram running on Railway 🚀"
+    return "Hello Amrutha 🚀 Your Flask app is working on Railway!"
 
-@app.route("/run")
-def run_now():
-    try:
-        run_strategy()
-        return "✅ Strategy executed. Check Telegram for updates."
-    except Exception as e:
-        return f"❌ Error: {e}"
-
-@app.route("/send-test")
-def send_test():
-    send_telegram("🚀 Test message from Railway Flask app!")
-    return "✅ Test message sent to Telegram!"
-
-@app.route(f"/webhook/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
-def telegram_webhook():
-    try:
-        data = request.get_json(force=True)
-        logging.info(f"📩 Incoming Telegram update: {data}")
-
-        if "message" in data:
-            chat_id = data["message"]["chat"]["id"]
-            text = data["message"].get("text", "")
-            reply = f"You said: {text}"
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-            requests.post(url, json={"chat_id": chat_id, "text": reply})
-        return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        logging.error(f"❌ Error in webhook: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+if _name_ == "_main_":
+    # Railway gives PORT as environment variable, default to 8080
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 
 # ==============================
 # Run App (Railway)
