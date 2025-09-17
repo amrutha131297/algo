@@ -18,6 +18,7 @@ MAX_RETRIES = 3
 TELEGRAM_BOT_TOKEN = "8428714129:AAERaYcX9fgLcQPWUwPP7z1C56EnvEf5jhQ"
 TELEGRAM_CHAT_ID = "1597187434"
 
+
 def send_telegram(msg: str):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -28,7 +29,7 @@ def send_telegram(msg: str):
 
 
 class FyersBroker:
-    def _init_(self, base_url: str, data_url: str, access_token: str, app_id: str):
+    def __init__(self, base_url: str, data_url: str, access_token: str, app_id: str):
         if not access_token:
             raise ValueError("❌ No access token found! Please paste it in FYERS_ACCESS_TOKEN")
         self.base_url = base_url.rstrip("/")
@@ -155,11 +156,13 @@ def run_strategy():
 
 
 # ================= FLASK APP =================
-app = Flask(_name_)
+app = Flask(__name__)
+
 
 @app.route("/")
 def home():
     return "✅ Algo Bot is running on Railway 🚀"
+
 
 @app.route("/run")
 def run_now():
@@ -170,6 +173,6 @@ def run_now():
         return f"❌ Error: {e}"
 
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
